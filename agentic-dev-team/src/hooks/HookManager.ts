@@ -71,9 +71,9 @@ export class HookManager {
     const sdkHooks: any = {};
 
     Object.entries(this.configuration).forEach(([event, matchers]) => {
-      sdkHooks[event] = matchers.map(matcher => ({
+      sdkHooks[event] = matchers.map((matcher: any) => ({
         matcher: matcher.matcher,
-        hooks: matcher.hooks.map(hookCallback =>
+        hooks: matcher.hooks.map((hookCallback: any) =>
           this.createSdkHookHandler(event, hookCallback, memberId)
         )
       }));
@@ -241,8 +241,8 @@ export class HookManager {
       }
     });
 
-    // Pre-compaction hook for context management
-    this.addHook('PreCompact', {
+    // Pre-tool-use hook for context management
+    this.addHook('PreToolUse', {
       name: 'context-preserver',
       handler: async (input: HookInput) => {
         this.logger.info(`Context compaction triggered: ${input.trigger}`, {

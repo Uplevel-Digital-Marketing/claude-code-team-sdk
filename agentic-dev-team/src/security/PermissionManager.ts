@@ -97,13 +97,13 @@ export class PermissionManager {
       this.logDecision(context, defaultResult, 'Applied default policy');
       return defaultResult;
 
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Permission evaluation failed for ${toolName}:`, error);
       const result: PermissionResult = {
         behavior: 'deny',
-        message: `Permission evaluation error: ${error.message}`
+        message: `Permission evaluation error: ${error.message || 'Unknown error'}`
       };
-      this.logDecision(context, result, `Error: ${error.message}`);
+      this.logDecision(context, result, `Error: ${error.message || 'Unknown error'}`);
       return result;
     }
   }

@@ -89,14 +89,15 @@ export class CostTracker {
   }
 
   getTotalUsage(): UsageData {
-    return this.stepUsages.reduce((total, step) => {
+    return this.stepUsages.reduce((total: UsageData, step: StepUsage): UsageData => {
       return this.aggregateUsage(total, step.usage);
     }, {
       input_tokens: 0,
       output_tokens: 0,
       cache_creation_input_tokens: 0,
-      cache_read_input_tokens: 0
-    });
+      cache_read_input_tokens: 0,
+      total_cost_usd: 0
+    } as UsageData);
   }
 
   getStepBreakdown(): StepUsage[] {

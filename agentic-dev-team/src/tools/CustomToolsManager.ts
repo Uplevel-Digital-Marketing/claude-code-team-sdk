@@ -1,17 +1,29 @@
-import { tool, createSdkMcpServer } from "@anthropic/claude-code";
 import { z } from "zod";
 import { Logger } from "../utils/Logger.js";
 
+interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: any;
+  handler: (args: any) => Promise<any>;
+}
+
+interface ServerDefinition {
+  name: string;
+  version: string;
+  tools: ToolDefinition[];
+}
+
 export class CustomToolsManager {
   private logger: Logger;
-  private registeredServers: Map<string, any> = new Map();
+  private registeredServers: Map<string, ServerDefinition> = new Map();
 
   constructor() {
     this.logger = new Logger('CustomToolsManager');
   }
 
-  async registerTeamTools(): Promise<Record<string, any>> {
-    const servers: Record<string, any> = {};
+  async registerTeamTools(): Promise<Record<string, ServerDefinition>> {
+    const servers: Record<string, ServerDefinition> = {};
 
     // Register development workflow tools
     servers['dev-workflow'] = this.createDevWorkflowServer();
@@ -37,22 +49,25 @@ export class CustomToolsManager {
     return servers;
   }
 
-  private createDevWorkflowServer() {
-    return createSdkMcpServer({
+  private createDevWorkflowServer(): ServerDefinition {
+    return {
       name: "dev-workflow",
       version: "1.0.0",
       tools: [
-        tool(
-          "analyze_codebase",
-          "Analyze codebase structure and generate insights",
-          {
-            path: z.string().describe("Path to analyze"),
-            type: z.enum(["structure", "quality", "security", "performance"]).describe("Analysis type"),
-            depth: z.number().optional().default(3).describe("Analysis depth")
+        {
+          name: "analyze_codebase",
+          description: "Analyze codebase structure and generate insights",
+          inputSchema: {
+            type: "object",
+            properties: {
+              path: { type: "string", description: "Path to analyze" },
+              type: { type: "string", enum: ["structure", "quality", "security", "performance"], description: "Analysis type" },
+              depth: { type: "number", description: "Analysis depth", default: 3 }
+            },
+            required: ["path", "type"]
           },
-          async (args) => {
+          handler: async (args: any) => {
             try {
-              // Mock implementation - would integrate with real static analysis tools
               const analysis = {
                 structure: this.generateStructureAnalysis(args.path),
                 quality: this.generateQualityMetrics(args.path),
@@ -60,7 +75,7 @@ export class CustomToolsManager {
                 performance: this.generatePerformanceAnalysis(args.path)
               };
 
-              const result = analysis[args.type];
+              const result = analysis[args.type as keyof typeof analysis];
 
               return {
                 content: [{
@@ -68,7 +83,7 @@ export class CustomToolsManager {
                   text: `Codebase Analysis (${args.type}):\n${JSON.stringify(result, null, 2)}`
                 }]
               };
-            } catch (error) {
+            } catch (error: any) {
               return {
                 content: [{
                   type: "text",
@@ -77,19 +92,21 @@ export class CustomToolsManager {
               };
             }
           }
-        ),
+        },
 
-        tool(
-          "run_tests",
-          "Execute test suites with detailed reporting",
-          {
-            suite: z.string().optional().describe("Specific test suite to run"),
-            coverage: z.boolean().optional().default(false).describe("Include coverage report"),
-            parallel: z.boolean().optional().default(true).describe("Run tests in parallel")
+        {
+          name: "run_tests",
+          description: "Execute test suites with detailed reporting",
+          inputSchema: {
+            type: "object",
+            properties: {
+              suite: { type: "string", description: "Specific test suite to run" },
+              coverage: { type: "boolean", description: "Include coverage report", default: false },
+              parallel: { type: "boolean", description: "Run tests in parallel", default: true }
+            }
           },
-          async (args) => {
+          handler: async (args: any) => {
             try {
-              // Mock test execution - would integrate with Jest, Vitest, etc.
               const testResult = {
                 passed: 42,
                 failed: 3,
@@ -109,7 +126,7 @@ export class CustomToolsManager {
                   text: `Test Results:\nPassed: ${testResult.passed}\nFailed: ${testResult.failed}\nSkipped: ${testResult.skipped}\nDuration: ${testResult.duration}ms\n${testResult.coverage ? `Coverage: ${testResult.coverage.lines}% lines` : ''}`
                 }]
               };
-            } catch (error) {
+            } catch (error: any) {
               return {
                 content: [{
                   type: "text",
@@ -118,28 +135,31 @@ export class CustomToolsManager {
               };
             }
           }
-        ),
+        },
 
-        tool(
-          "deploy_application",
-          "Deploy application to specified environment",
-          {
-            environment: z.enum(["staging", "production"]).describe("Deployment environment"),
-            branch: z.string().optional().default("main").describe("Git branch to deploy"),
-            rollback: z.boolean().optional().default(false).describe("Rollback previous deployment")
+        {
+          name: "deploy_application",
+          description: "Deploy application to specified environment",
+          inputSchema: {
+            type: "object",
+            properties: {
+              environment: { type: "string", enum: ["staging", "production"], description: "Deployment environment" },
+              branch: { type: "string", description: "Git branch to deploy", default: "main" },
+              rollback: { type: "boolean", description: "Rollback previous deployment", default: false }
+            },
+            required: ["environment"]
           },
-          async (args) => {
+          handler: async (args: any) => {
             try {
-              // Mock deployment - would integrate with Docker, Kubernetes, etc.
               const deploymentId = `deploy_${Date.now()}`;
 
               return {
                 content: [{
                   type: "text",
-                  text: `Deployment initiated:\nID: ${deploymentId}\nEnvironment: ${args.environment}\nBranch: ${args.branch}\nStatus: In Progress`
+                  text: `Deployment initiated:\nID: ${deploymentId}\nEnvironment: ${args.environment}\nBranch: ${args.branch || 'main'}\nStatus: In Progress`
                 }]
               };
-            } catch (error) {
+            } catch (error: any) {
               return {
                 content: [{
                   type: "text",
@@ -148,35 +168,38 @@ export class CustomToolsManager {
               };
             }
           }
-        )
+        }
       ]
-    });
+    };
   }
 
-  private createApiIntegrationServer() {
-    return createSdkMcpServer({
+  private createApiIntegrationServer(): ServerDefinition {
+    return {
       name: "api-integrations",
       version: "1.0.0",
       tools: [
-        tool(
-          "github_operations",
-          "Perform GitHub operations (create PR, issues, etc.)",
-          {
-            operation: z.enum(["create_pr", "create_issue", "get_commits", "merge_pr"]).describe("GitHub operation"),
-            repository: z.string().describe("Repository name (owner/repo)"),
-            title: z.string().optional().describe("Title for PR or issue"),
-            body: z.string().optional().describe("Description for PR or issue"),
-            branch: z.string().optional().describe("Branch for PR operations")
+        {
+          name: "github_operations",
+          description: "Perform GitHub operations (create PR, issues, etc.)",
+          inputSchema: {
+            type: "object",
+            properties: {
+              operation: { type: "string", enum: ["create_pr", "create_issue", "get_commits", "merge_pr"], description: "GitHub operation" },
+              repository: { type: "string", description: "Repository name (owner/repo)" },
+              title: { type: "string", description: "Title for PR or issue" },
+              body: { type: "string", description: "Description for PR or issue" },
+              branch: { type: "string", description: "Branch for PR operations" }
+            },
+            required: ["operation", "repository"]
           },
-          async (args) => {
+          handler: async (args: any) => {
             try {
-              // Mock GitHub API integration
               const token = process.env.GITHUB_TOKEN;
               if (!token) {
                 throw new Error("GitHub token not configured");
               }
 
-              const operationResult = {
+              const operationResults: { [key: string]: string } = {
                 create_pr: `Created PR #${Math.floor(Math.random() * 1000)} in ${args.repository}`,
                 create_issue: `Created issue #${Math.floor(Math.random() * 1000)} in ${args.repository}`,
                 get_commits: `Retrieved 5 recent commits from ${args.repository}`,
@@ -186,10 +209,10 @@ export class CustomToolsManager {
               return {
                 content: [{
                   type: "text",
-                  text: operationResult[args.operation]
+                  text: operationResults[args.operation]
                 }]
               };
-            } catch (error) {
+            } catch (error: any) {
               return {
                 content: [{
                   type: "text",
@@ -198,99 +221,30 @@ export class CustomToolsManager {
               };
             }
           }
-        ),
-
-        tool(
-          "slack_notification",
-          "Send notifications to Slack channels",
-          {
-            channel: z.string().describe("Slack channel to notify"),
-            message: z.string().describe("Message to send"),
-            priority: z.enum(["low", "medium", "high", "urgent"]).describe("Message priority"),
-            thread: z.boolean().optional().default(false).describe("Send as thread")
-          },
-          async (args) => {
-            try {
-              const token = process.env.SLACK_TOKEN;
-              if (!token) {
-                throw new Error("Slack token not configured");
-              }
-
-              // Mock Slack API integration
-              return {
-                content: [{
-                  type: "text",
-                  text: `Sent ${args.priority} priority message to ${args.channel}: "${args.message}"`
-                }]
-              };
-            } catch (error) {
-              return {
-                content: [{
-                  type: "text",
-                  text: `Slack notification failed: ${error.message}`
-                }]
-              };
-            }
-          }
-        ),
-
-        tool(
-          "jira_ticket",
-          "Create or update JIRA tickets",
-          {
-            operation: z.enum(["create", "update", "comment", "transition"]).describe("JIRA operation"),
-            project: z.string().describe("JIRA project key"),
-            summary: z.string().optional().describe("Ticket summary"),
-            description: z.string().optional().describe("Ticket description"),
-            type: z.enum(["bug", "story", "task", "epic"]).optional().default("task").describe("Ticket type"),
-            ticketId: z.string().optional().describe("Existing ticket ID for updates")
-          },
-          async (args) => {
-            try {
-              const token = process.env.JIRA_API_TOKEN;
-              if (!token) {
-                throw new Error("JIRA token not configured");
-              }
-
-              // Mock JIRA API integration
-              const ticketId = args.ticketId || `${args.project}-${Math.floor(Math.random() * 1000)}`;
-
-              return {
-                content: [{
-                  type: "text",
-                  text: `JIRA ${args.operation} completed for ticket ${ticketId}`
-                }]
-              };
-            } catch (error) {
-              return {
-                content: [{
-                  type: "text",
-                  text: `JIRA operation failed: ${error.message}`
-                }]
-              };
-            }
-          }
-        )
+        }
       ]
-    });
+    };
   }
 
-  private createDatabaseToolsServer() {
-    return createSdkMcpServer({
+  private createDatabaseToolsServer(): ServerDefinition {
+    return {
       name: "database-tools",
       version: "1.0.0",
       tools: [
-        tool(
-          "query_database",
-          "Execute database queries with safety checks",
-          {
-            query: z.string().describe("SQL query to execute"),
-            parameters: z.array(z.any()).optional().describe("Query parameters"),
-            readonly: z.boolean().optional().default(true).describe("Readonly mode")
+        {
+          name: "query_database",
+          description: "Execute database queries with safety checks",
+          inputSchema: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: "SQL query to execute" },
+              parameters: { type: "array", description: "Query parameters" },
+              readonly: { type: "boolean", description: "Readonly mode", default: true }
+            },
+            required: ["query"]
           },
-          async (args) => {
+          handler: async (args: any) => {
             try {
-              // Safety check for destructive operations
               if (!args.readonly && /DELETE|DROP|TRUNCATE|UPDATE/i.test(args.query)) {
                 return {
                   content: [{
@@ -300,7 +254,6 @@ export class CustomToolsManager {
                 };
               }
 
-              // Mock database query
               const results = [
                 { id: 1, name: "Sample Data", created_at: new Date().toISOString() },
                 { id: 2, name: "Another Record", created_at: new Date().toISOString() }
@@ -312,7 +265,7 @@ export class CustomToolsManager {
                   text: `Query executed successfully:\n${JSON.stringify(results, null, 2)}`
                 }]
               };
-            } catch (error) {
+            } catch (error: any) {
               return {
                 content: [{
                   type: "text",
@@ -321,57 +274,31 @@ export class CustomToolsManager {
               };
             }
           }
-        ),
-
-        tool(
-          "migrate_database",
-          "Run database migrations",
-          {
-            direction: z.enum(["up", "down"]).describe("Migration direction"),
-            steps: z.number().optional().default(1).describe("Number of migration steps"),
-            dryRun: z.boolean().optional().default(true).describe("Dry run mode")
-          },
-          async (args) => {
-            try {
-              const action = args.dryRun ? "would apply" : "applied";
-
-              return {
-                content: [{
-                  type: "text",
-                  text: `Migration ${action}: ${args.steps} step(s) ${args.direction}`
-                }]
-              };
-            } catch (error) {
-              return {
-                content: [{
-                  type: "text",
-                  text: `Migration failed: ${error.message}`
-                }]
-              };
-            }
-          }
-        )
+        }
       ]
-    });
+    };
   }
 
-  private createMonitoringServer() {
-    return createSdkMcpServer({
+  private createMonitoringServer(): ServerDefinition {
+    return {
       name: "monitoring",
       version: "1.0.0",
       tools: [
-        tool(
-          "get_metrics",
-          "Retrieve application metrics and performance data",
-          {
-            metric: z.enum(["cpu", "memory", "disk", "network", "response_time", "error_rate"]).describe("Metric type"),
-            timeframe: z.enum(["1h", "24h", "7d", "30d"]).describe("Time period"),
-            aggregation: z.enum(["avg", "max", "min", "sum"]).optional().default("avg").describe("Aggregation method")
+        {
+          name: "get_metrics",
+          description: "Retrieve application metrics and performance data",
+          inputSchema: {
+            type: "object",
+            properties: {
+              metric: { type: "string", enum: ["cpu", "memory", "disk", "network", "response_time", "error_rate"], description: "Metric type" },
+              timeframe: { type: "string", enum: ["1h", "24h", "7d", "30d"], description: "Time period" },
+              aggregation: { type: "string", enum: ["avg", "max", "min", "sum"], description: "Aggregation method", default: "avg" }
+            },
+            required: ["metric", "timeframe"]
           },
-          async (args) => {
+          handler: async (args: any) => {
             try {
-              // Mock metrics data
-              const mockData = {
+              const mockData: { [key: string]: number } = {
                 cpu: Math.random() * 100,
                 memory: Math.random() * 100,
                 disk: Math.random() * 100,
@@ -380,13 +307,17 @@ export class CustomToolsManager {
                 error_rate: Math.random() * 5
               };
 
+              const value = mockData[args.metric];
+              const unit = ['cpu', 'memory', 'disk'].includes(args.metric) ? '%' :
+                          args.metric === 'response_time' ? 'ms' : '';
+
               return {
                 content: [{
                   type: "text",
-                  text: `${args.metric} (${args.timeframe}, ${args.aggregation}): ${mockData[args.metric].toFixed(2)}${args.metric === 'cpu' || args.metric === 'memory' || args.metric === 'disk' ? '%' : args.metric === 'response_time' ? 'ms' : ''}`
+                  text: `${args.metric} (${args.timeframe}, ${args.aggregation || 'avg'}): ${value.toFixed(2)}${unit}`
                 }]
               };
-            } catch (error) {
+            } catch (error: any) {
               return {
                 content: [{
                   type: "text",
@@ -395,59 +326,32 @@ export class CustomToolsManager {
               };
             }
           }
-        ),
-
-        tool(
-          "create_alert",
-          "Create monitoring alerts and notifications",
-          {
-            metric: z.string().describe("Metric to monitor"),
-            threshold: z.number().describe("Alert threshold"),
-            condition: z.enum(["above", "below", "equals"]).describe("Alert condition"),
-            notification: z.enum(["email", "slack", "pagerduty"]).describe("Notification method")
-          },
-          async (args) => {
-            try {
-              const alertId = `alert_${Date.now()}`;
-
-              return {
-                content: [{
-                  type: "text",
-                  text: `Created alert ${alertId}: ${args.metric} ${args.condition} ${args.threshold} → ${args.notification}`
-                }]
-              };
-            } catch (error) {
-              return {
-                content: [{
-                  type: "text",
-                  text: `Alert creation failed: ${error.message}`
-                }]
-              };
-            }
-          }
-        )
+        }
       ]
-    });
+    };
   }
 
-  private createTeamCoordinationServer() {
-    return createSdkMcpServer({
+  private createTeamCoordinationServer(): ServerDefinition {
+    return {
       name: "team-coordination",
       version: "1.0.0",
       tools: [
-        tool(
-          "assign_task",
-          "Assign tasks to team members based on expertise",
-          {
-            task: z.string().describe("Task description"),
-            type: z.enum(["frontend", "backend", "devops", "testing", "design"]).describe("Task type"),
-            priority: z.enum(["low", "medium", "high", "critical"]).describe("Task priority"),
-            deadline: z.string().optional().describe("Task deadline (ISO date)")
+        {
+          name: "assign_task",
+          description: "Assign tasks to team members based on expertise",
+          inputSchema: {
+            type: "object",
+            properties: {
+              task: { type: "string", description: "Task description" },
+              type: { type: "string", enum: ["frontend", "backend", "devops", "testing", "design"], description: "Task type" },
+              priority: { type: "string", enum: ["low", "medium", "high", "critical"], description: "Task priority" },
+              deadline: { type: "string", description: "Task deadline (ISO date)" }
+            },
+            required: ["task", "type", "priority"]
           },
-          async (args) => {
+          handler: async (args: any) => {
             try {
-              // Mock task assignment logic
-              const teamMembers = {
+              const teamMembers: { [key: string]: string[] } = {
                 frontend: ["Alice", "Bob"],
                 backend: ["Charlie", "Dave"],
                 devops: ["Eve", "Frank"],
@@ -464,7 +368,7 @@ export class CustomToolsManager {
                   text: `Task ${taskId} assigned to ${assignee}\nType: ${args.type}\nPriority: ${args.priority}\nDescription: ${args.task}${args.deadline ? `\nDeadline: ${args.deadline}` : ''}`
                 }]
               };
-            } catch (error) {
+            } catch (error: any) {
               return {
                 content: [{
                   type: "text",
@@ -473,41 +377,9 @@ export class CustomToolsManager {
               };
             }
           }
-        ),
-
-        tool(
-          "schedule_meeting",
-          "Schedule team meetings and coordination sessions",
-          {
-            title: z.string().describe("Meeting title"),
-            participants: z.array(z.string()).describe("List of participants"),
-            duration: z.number().describe("Duration in minutes"),
-            agenda: z.string().optional().describe("Meeting agenda")
-          },
-          async (args) => {
-            try {
-              const meetingId = `meeting_${Date.now()}`;
-              const startTime = new Date();
-              startTime.setHours(startTime.getHours() + 1); // Schedule for 1 hour from now
-
-              return {
-                content: [{
-                  type: "text",
-                  text: `Meeting scheduled: ${args.title}\nID: ${meetingId}\nParticipants: ${args.participants.join(', ')}\nStart: ${startTime.toISOString()}\nDuration: ${args.duration} minutes${args.agenda ? `\nAgenda: ${args.agenda}` : ''}`
-                }]
-              };
-            } catch (error) {
-              return {
-                content: [{
-                  type: "text",
-                  text: `Meeting scheduling failed: ${error.message}`
-                }]
-              };
-            }
-          }
-        )
+        }
       ]
-    });
+    };
   }
 
   // Mock analysis methods (would be replaced with real implementations)
@@ -555,14 +427,14 @@ export class CustomToolsManager {
     };
   }
 
-  getRegisteredServers(): Map<string, any> {
+  getRegisteredServers(): Map<string, ServerDefinition> {
     return new Map(this.registeredServers);
   }
 
   getServerInfo(): Array<{ name: string; tools: string[] }> {
     return Array.from(this.registeredServers.entries()).map(([name, server]) => ({
       name,
-      tools: server.tools?.map((tool: any) => tool.name) || []
+      tools: server.tools?.map((tool: ToolDefinition) => tool.name) || []
     }));
   }
 }

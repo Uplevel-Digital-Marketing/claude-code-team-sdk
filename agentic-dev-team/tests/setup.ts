@@ -5,11 +5,31 @@ import path from 'path';
 dotenv.config({ path: path.join(process.cwd(), '.env.test') });
 
 // Mock external dependencies
-jest.mock('@anthropic/claude-code', () => ({
-  query: jest.fn(),
-  tool: jest.fn(),
-  createSdkMcpServer: jest.fn()
-}));
+jest.mock('@anthropic-ai/sdk', () => {
+  const mockCreate = jest.fn().mockResolvedValue({
+    content: [
+      {
+        type: 'text',
+        text: 'Mocked response'
+      }
+    ],
+    usage: {
+      input_tokens: 50,
+      output_tokens: 100
+    }
+  });
+
+  const MockAnthropic = jest.fn().mockImplementation(() => ({
+    messages: {
+      create: mockCreate
+    }
+  }));
+
+  return {
+    default: MockAnthropic,
+    __esModule: true
+  };
+});
 
 // Set up test environment
 process.env.NODE_ENV = 'test';
@@ -20,7 +40,7 @@ process.env.TEAM_WORKSPACE = path.join(process.cwd(), 'tests', 'fixtures', 'work
 jest.setTimeout(30000);
 
 // Global test utilities
-global.testUtils = {
+(global as any).testUtils = {
   createMockTeamConfig: () => ({
     name: 'TestTeam',
     workspace: '/test/workspace',

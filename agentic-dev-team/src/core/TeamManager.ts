@@ -1,4 +1,4 @@
-import { query, tool, createSdkMcpServer } from "@anthropic/claude-code";
+import Anthropic from "@anthropic-ai/sdk";
 import { TeamConfiguration, TeamMember, TaskRequest, TaskResult, TeamSession } from "../types/index.js";
 import { CostTracker } from "../utils/CostTracker.js";
 import { SessionManager } from "../utils/SessionManager.js";
@@ -17,6 +17,7 @@ export class TeamManager {
   private customToolsManager: CustomToolsManager;
   private logger: Logger;
   private activeSessions: Map<string, TeamSession> = new Map();
+  private anthropic: Anthropic;
 
   constructor(config: TeamConfiguration) {
     this.config = config;
@@ -26,6 +27,9 @@ export class TeamManager {
     this.hookManager = new HookManager(config.hooks);
     this.customToolsManager = new CustomToolsManager();
     this.logger = new Logger('TeamManager');
+    this.anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
   }
 
   async initializeTeam(): Promise<void> {
@@ -98,45 +102,41 @@ export class TeamManager {
     this.logger.info(`Executing task ${taskId} with ${member.name}`);
 
     try {
-      // Create streaming input generator for the task
-      async function* generateTaskInput() {
-        yield {
-          type: "user" as const,
-          message: {
-            role: "user" as const,
-            content: `${task.description}
+      const startTime = Date.now();
+
+      // Create message content for the task
+      const messageContent = `${task.description}
 
 Files to focus on: ${task.files?.join(', ') || 'entire workspace'}
 Priority: ${task.priority}
-Dependencies: ${task.dependencies?.join(', ') || 'none'}`
+Dependencies: ${task.dependencies?.join(', ') || 'none'}`;
+
+      // Execute with Anthropic API
+      const response = await this.anthropic.messages.create({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 4096,
+        system: member.systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: messageContent
           }
-        };
-      }
+        ]
+      });
 
-      let result = '';
-      let usage: any = {};
-      const startTime = Date.now();
+      const result = response.content
+        .filter(block => block.type === 'text')
+        .map(block => block.text)
+        .join('\n');
 
-      // Execute with member's configuration
-      for await (const message of query({
-        prompt: generateTaskInput(),
-        options: {
-          cwd: this.config.workspace,
-          customSystemPrompt: member.systemPrompt,
-          allowedTools: member.permissions,
-          maxTurns: 10,
-          mcpServers: this.config.mcpServers,
-          canUseTool: this.permissionManager.getPermissionHandler(),
-          hooks: this.hookManager.getHooksForMember(member.id),
-          includePartialMessages: true
-        }
-      })) {
-        if (message.type === "result" && message.subtype === "success") {
-          result = message.result;
-          usage = message.usage;
-          break;
-        }
-      }
+      const usage = {
+        input_tokens: response.usage.input_tokens,
+        output_tokens: response.usage.output_tokens,
+        total_cost_usd: this.costTracker.calculateCost({
+          input_tokens: response.usage.input_tokens,
+          output_tokens: response.usage.output_tokens
+        })
+      };
 
       const taskResult: TaskResult = {
         taskId,
@@ -155,12 +155,12 @@ Dependencies: ${task.dependencies?.join(', ') || 'none'}`
       this.logger.info(`Task ${taskId} completed successfully`);
       return taskResult;
 
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Task ${taskId} failed:`, error);
       return {
         taskId,
         status: 'failed',
-        result: `Task failed: ${error.message}`
+        result: `Task failed: ${error.message || 'Unknown error'}`
       };
     }
   }

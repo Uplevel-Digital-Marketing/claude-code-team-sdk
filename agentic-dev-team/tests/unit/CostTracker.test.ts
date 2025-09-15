@@ -46,7 +46,7 @@ describe('CostTracker', () => {
       const message = {
         type: 'assistant',
         id: 'msg_123',
-        usage: global.testUtils.createMockUsageData()
+        usage: (global as any).testUtils.createMockUsageData()
       };
 
       const result = costTracker.processMessage(message);
@@ -71,7 +71,7 @@ describe('CostTracker', () => {
       const message = {
         type: 'assistant',
         id: 'msg_123',
-        usage: global.testUtils.createMockUsageData()
+        usage: (global as any).testUtils.createMockUsageData()
       };
 
       // Process same message twice

@@ -9,7 +9,7 @@ import { Logger } from './utils/Logger.js';
 dotenv.config();
 
 export class AgenticDevTeam {
-  private teamManager: TeamManager;
+  private teamManager!: TeamManager;
   private logger: Logger;
   private customToolsManager: CustomToolsManager;
 
@@ -290,8 +290,8 @@ Examples:
         `);
     }
 
-  } catch (error) {
-    console.error('Error:', error.message);
+  } catch (error: any) {
+    console.error('Error:', error.message || 'Unknown error');
     process.exit(1);
   }
 }
@@ -306,6 +306,11 @@ export { SessionManager } from './utils/SessionManager.js';
 export * from './types/index.js';
 
 // Run CLI if called directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch(console.error);
+// Note: import.meta.url check doesn't work in all test environments
+try {
+  if (process.argv[1] && process.argv[1].endsWith('index.js')) {
+    main().catch(console.error);
+  }
+} catch (error) {
+  // Ignore import.meta errors in test environments
 }
