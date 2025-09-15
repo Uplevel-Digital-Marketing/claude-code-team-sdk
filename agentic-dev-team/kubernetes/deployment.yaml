@@ -1,0 +1,139 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentic-dev-team
+  namespace: development
+  labels:
+    app: agentic-dev-team
+    version: v1.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: agentic-dev-team
+  template:
+    metadata:
+      labels:
+        app: agentic-dev-team
+        version: v1.0.0
+    spec:
+      containers:
+      - name: agentic-dev-team
+        image: agentic-dev-team:latest
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: anthropic-secret
+              key: api-key
+        - name: TEAM_WORKSPACE
+          value: "/app/workspace"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: REDIS_URL
+          value: "redis://redis-service:6379"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: url
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: workspace-volume
+          mountPath: /app/workspace
+        - name: logs-volume
+          mountPath: /app/logs
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: workspace-volume
+        persistentVolumeClaim:
+          claimName: workspace-pvc
+      - name: logs-volume
+        persistentVolumeClaim:
+          claimName: logs-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentic-dev-team-service
+  namespace: development
+  labels:
+    app: agentic-dev-team
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: agentic-dev-team
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workspace-pvc
+  namespace: development
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: logs-pvc
+  namespace: development
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: anthropic-secret
+  namespace: development
+type: Opaque
+data:
+  api-key: <base64-encoded-anthropic-api-key>
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: database-secret
+  namespace: development
+type: Opaque
+data:
+  url: <base64-encoded-database-url>

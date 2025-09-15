@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  agentic-dev-team:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - TEAM_WORKSPACE=/app/workspace
+      - LOG_LEVEL=info
+    volumes:
+      - ./workspace:/app/workspace
+      - ./logs:/app/logs
+      - claude-sessions:/root/.config/claude
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - agentic-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - agentic-network
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=agentic_dev_team
+      - POSTGRES_USER=devteam
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devteam123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - agentic-network
+
+  monitoring:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - agentic-network
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    depends_on:
+      - monitoring
+    networks:
+      - agentic-network
+
+volumes:
+  redis-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+  claude-sessions:
+
+networks:
+  agentic-network:
+    driver: bridge
